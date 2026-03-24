@@ -166,6 +166,8 @@ def get_wikidata_entities(lat: float, lon: float) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     logging.basicConfig(level=logging.INFO)
 
     # Budapest, Hungary
