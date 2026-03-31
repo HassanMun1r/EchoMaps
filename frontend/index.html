@@ -5,35 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EchoMaps</title>
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #0f1117;
-      --surface:  #1a1d27;
-      --border:   #2a2d3a;
-      --accent:   #6c8ebf;
-      --accent2:  #4a6fa5;
-      --text:     #e2e4ea;
-      --muted:    #7a7f94;
-      --chip-bg:  #252837;
-      --radius:   10px;
+      --bg:         #0b0d14;
+      --surface:    #13161f;
+      --surface2:   #1a1d2a;
+      --border:     #252837;
+      --border2:    #30334a;
+      --accent:     #6c8ebf;
+      --accent2:    #4a6fa5;
+      --accent-glow:rgba(108,142,191,0.25);
+      --text:       #dde1ec;
+      --text-dim:   #8a8fa8;
+      --text-muted: #555a70;
+      --radius:     10px;
+      --radius-sm:  6px;
+      --green:      #2d9a6a;
+      --red:        #9a2d2d;
+      --amber:      #c07820;
+      --purple:     #7a40b0;
     }
 
-    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
 
-    #app { display: flex; height: 100vh; overflow: hidden; }
+    /* ── App layout ─────────────────────────────────────────────────────────── */
+    #app { display: flex; height: 100vh; }
 
-    /* ── Map ── */
-    #map { flex: 1; min-width: 0; }
+    #map { flex: 1; min-width: 0; transition: filter 1.2s ease; }
 
-    /* ── Sidebar ── */
-    #sidebar {
-      width: 380px;
+    /* ── Panel ──────────────────────────────────────────────────────────────── */
+    #panel {
+      width: 420px;
       flex-shrink: 0;
       background: var(--surface);
       border-left: 1px solid var(--border);
@@ -42,363 +50,1120 @@
       overflow: hidden;
     }
 
-    #sidebar-header {
-      padding: 20px 20px 0;
+    /* ── Panel header ───────────────────────────────────────────────────────── */
+    #panel-header {
+      padding: 16px 18px 14px;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 16px;
+      flex-shrink: 0;
     }
 
-    #sidebar-header h1 {
-      font-size: 1.25rem;
+    .brand { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+
+    #location-name {
+      font-size: 1.2rem;
       font-weight: 700;
-      letter-spacing: 0.04em;
-      color: var(--accent);
+      color: var(--text);
+      line-height: 1.3;
+      min-height: 1.5rem;
+      transition: opacity 0.3s;
     }
 
-    #sidebar-header p {
-      font-size: 0.78rem;
-      color: var(--muted);
-      margin-top: 4px;
+    #coords-display {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: monospace;
+      margin-top: 2px;
+      min-height: 1rem;
     }
 
-    #coords-bar {
+    #query-row {
       display: flex;
-      align-items: center;
       gap: 8px;
       margin-top: 12px;
-      font-size: 0.78rem;
-      color: var(--muted);
+      align-items: center;
     }
-
-    #coords-text { font-family: monospace; color: var(--text); }
-
-    /* ── Query area ── */
-    #query-area { padding: 16px 20px; border-bottom: 1px solid var(--border); }
 
     #query-input {
-      width: 100%;
-      background: var(--chip-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-sm);
       color: var(--text);
-      font-size: 0.85rem;
-      padding: 10px 12px;
-      resize: none;
+      font-size: 0.82rem;
+      padding: 8px 11px;
       outline: none;
       transition: border-color 0.2s;
-      line-height: 1.5;
     }
     #query-input:focus { border-color: var(--accent); }
+    #query-input::placeholder { color: var(--text-muted); }
 
     #discover-btn {
-      margin-top: 10px;
-      width: 100%;
-      padding: 10px;
+      padding: 8px 16px;
       background: var(--accent2);
       border: none;
-      border-radius: var(--radius);
+      border-radius: var(--radius-sm);
       color: #fff;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
+      white-space: nowrap;
       transition: background 0.2s, opacity 0.2s;
       letter-spacing: 0.03em;
     }
     #discover-btn:hover:not(:disabled) { background: var(--accent); }
-    #discover-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #discover-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    /* ── Results ── */
-    #results-area {
+    /* ── Tab bar ────────────────────────────────────────────────────────────── */
+    #tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+
+    .tab-btn {
       flex: 1;
+      padding: 10px 4px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover { color: var(--text-dim); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Tab panels ─────────────────────────────────────────────────────────── */
+    #tab-panels { flex: 1; overflow: hidden; position: relative; }
+
+    .tab-pane {
+      position: absolute;
+      inset: 0;
       overflow-y: auto;
-      padding: 16px 20px;
+      padding: 16px 18px;
       scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-
-    /* Spinner */
-    #spinner {
+      scrollbar-color: var(--border2) transparent;
       display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      padding: 40px 0;
-      color: var(--muted);
-      font-size: 0.82rem;
+      opacity: 0;
+      transition: opacity 0.3s ease;
     }
-    #spinner.active { display: flex; }
+    .tab-pane.active { display: block; }
+    .tab-pane.visible { opacity: 1; }
 
-    .spin-ring {
-      width: 32px; height: 32px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Placeholder */
-    #placeholder {
+    /* ── Placeholder (idle) ─────────────────────────────────────────────────── */
+    .idle-placeholder {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
       height: 100%;
-      color: var(--muted);
+      gap: 10px;
+      color: var(--text-muted);
       text-align: center;
-      font-size: 0.82rem;
-      line-height: 1.6;
-      padding: 20px;
+      font-size: 0.8rem;
+      line-height: 1.7;
     }
-    #placeholder svg { opacity: 0.25; }
+    .idle-placeholder svg { opacity: 0.2; }
 
-    /* Chunks */
-    #chunks { display: none; }
-    #chunks.active { display: block; }
-
-    .chunk {
-      background: var(--chip-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 12px 14px;
-      font-size: 0.82rem;
-      line-height: 1.65;
-      color: var(--text);
-      margin-bottom: 10px;
+    /* ── Skeleton loader ────────────────────────────────────────────────────── */
+    @keyframes shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position:  400px 0; }
     }
+    .sk {
+      background: linear-gradient(90deg, var(--surface2) 25%, var(--border2) 50%, var(--surface2) 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: var(--radius-sm);
+    }
+    .sk-line { height: 12px; margin-bottom: 9px; }
+    .sk-line.w90 { width: 90%; }
+    .sk-line.w75 { width: 75%; }
+    .sk-line.w60 { width: 60%; }
+    .sk-line.w45 { width: 45%; }
+    .sk-card { height: 100px; margin-bottom: 12px; border-radius: var(--radius); }
+    .sk-title { height: 22px; width: 55%; margin-bottom: 14px; }
 
-    /* Sources */
-    #sources-section { margin-top: 8px; }
-    #sources-title {
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
+    /* ── Narrative tab ──────────────────────────────────────────────────────── */
+    .narrative-location { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 14px; }
+
+    .narrative-body { font-size: 0.84rem; line-height: 1.75; color: var(--text); }
+    .narrative-body p { margin-bottom: 12px; }
+
+    .sources-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 8px;
+      color: var(--text-muted);
+      margin: 20px 0 8px;
     }
+    .source-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .source-chip {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      background: var(--chip-bg);
-      border: 1px solid var(--border);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
       border-radius: 20px;
-      padding: 4px 10px;
-      font-size: 0.75rem;
+      padding: 4px 11px;
+      font-size: 0.72rem;
       color: var(--accent);
       text-decoration: none;
-      margin: 0 4px 6px 0;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, background 0.2s;
     }
-    .source-chip:hover { border-color: var(--accent); }
+    .source-chip:hover { border-color: var(--accent); background: var(--border); }
+    .source-chip .src-icon { font-size: 0.68rem; opacity: 0.7; }
 
-    /* Error */
-    #error-box {
-      display: none;
-      background: #2a1a1a;
-      border: 1px solid #5a2a2a;
+    /* ── Error box ──────────────────────────────────────────────────────────── */
+    .error-box {
+      background: #1e0f0f;
+      border: 1px solid #5a2020;
       border-radius: var(--radius);
       padding: 12px 14px;
       font-size: 0.82rem;
-      color: #e07070;
+      color: #d06060;
+      line-height: 1.5;
     }
-    #error-box.active { display: block; }
 
-    /* Leaflet pin override */
-    .echomaps-pin {
+    /* ── Perspectives tab ───────────────────────────────────────────────────── */
+    .persona-card {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .persona-card:hover { border-color: var(--border2); }
+
+    .persona-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .persona-emoji { font-size: 1.4rem; line-height: 1; }
+    .persona-label { font-size: 0.78rem; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+    .persona-type  { font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
+
+    .persona-excerpt {
+      font-size: 0.78rem;
+      line-height: 1.65;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .confidence-row { display: flex; align-items: center; gap: 10px; }
+    .confidence-label { font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; width: 70px; flex-shrink: 0; }
+    .confidence-track {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .confidence-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.8s ease;
+    }
+    .confidence-pct { font-size: 0.68rem; color: var(--text-dim); width: 30px; text-align: right; flex-shrink: 0; }
+
+    /* ── Graph tab ──────────────────────────────────────────────────────────── */
+    #graph-container {
+      width: 100%;
+      height: 340px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      position: relative;
+    }
+    #graph-container svg { width: 100%; height: 100%; }
+
+    .graph-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.68rem;
+      color: var(--text-dim);
+    }
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .graph-tip {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 8px;
+      font-style: italic;
+    }
+
+    .graph-no-data {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    /* ── Timeline tab ───────────────────────────────────────────────────────── */
+    #timeline-scroll {
+      overflow-x: auto;
+      padding-bottom: 8px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border2) transparent;
+    }
+
+    #timeline-track {
+      display: flex;
+      align-items: center;
+      height: 56px;
+      min-width: max-content;
+      gap: 2px;
+      padding: 0 4px;
+    }
+
+    .era-segment {
+      height: 36px;
+      min-width: 44px;
+      border-radius: 4px;
+      cursor: pointer;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.62rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.75);
+      transition: filter 0.2s, transform 0.15s;
+      flex-shrink: 0;
+    }
+    .era-segment:hover { filter: brightness(1.3); transform: scaleY(1.15); z-index: 2; }
+
+    .era-segment.positive { background: #1e5c3c; border: 1px solid #2d9a6a; }
+    .era-segment.dark     { background: #5c1e1e; border: 1px solid #9a2d2d; }
+    .era-segment.neutral  { background: #252837; border: 1px solid #3a3d50; }
+
+    /* Tooltip */
+    #era-tooltip {
+      position: fixed;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 0.74rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+      max-width: 280px;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0;
+      transition: opacity 0.15s;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    #era-tooltip.visible { opacity: 1; }
+    #era-tooltip .tip-year { font-weight: 700; color: var(--text); font-size: 0.82rem; margin-bottom: 4px; }
+
+    .timeline-labels {
+      display: flex;
+      min-width: max-content;
+      gap: 2px;
+      padding: 0 4px;
+    }
+    .era-label {
+      min-width: 44px;
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      text-align: center;
+      flex-shrink: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .timeline-empty {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      padding: 20px 0;
+      text-align: center;
+    }
+
+    /* ── Pulsing map marker ─────────────────────────────────────────────────── */
+    .pulse-dot {
       width: 14px; height: 14px;
       background: var(--accent);
-      border: 2px solid #fff;
+      border: 2.5px solid white;
       border-radius: 50%;
-      box-shadow: 0 0 6px rgba(108,142,191,0.7);
+      position: relative;
+    }
+    .pulse-dot::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      background: rgba(108,142,191,0.5);
+      animation: pulse-ring 1.8s ease-out infinite;
+    }
+    @keyframes pulse-ring {
+      0%   { transform: translate(-50%,-50%) scale(1);   opacity: 0.7; }
+      100% { transform: translate(-50%,-50%) scale(3.5); opacity: 0;   }
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────────── */
+    @media (max-width: 720px) {
+      #app { flex-direction: column; }
+      #map { flex: 0 0 45vh; }
+      #panel { width: 100%; flex: 1; }
     }
   </style>
 </head>
 <body>
+
 <div id="app">
   <div id="map"></div>
 
-  <div id="sidebar">
-    <div id="sidebar-header">
-      <h1>EchoMaps</h1>
-      <p>Click anywhere on the map to explore its history</p>
-      <div id="coords-bar">
-        <span>Location:</span>
-        <span id="coords-text">—</span>
+  <div id="panel">
+    <!-- Header -->
+    <div id="panel-header">
+      <div class="brand">EchoMaps</div>
+      <div id="location-name">Click a location to begin</div>
+      <div id="coords-display">—</div>
+      <div id="query-row">
+        <input id="query-input" type="text" placeholder="Ask something about this place…"
+               value="Tell me the history of this place" />
+        <button id="discover-btn" disabled>Discover</button>
       </div>
     </div>
 
-    <div id="query-area">
-      <textarea id="query-input" rows="2"
-        placeholder="Ask something about this place…">Tell me the history of this place</textarea>
-      <button id="discover-btn" disabled>Discover</button>
+    <!-- Tab bar -->
+    <div id="tab-bar">
+      <button class="tab-btn active" data-tab="narrative">NARRATIVE</button>
+      <button class="tab-btn" data-tab="perspectives">PERSPECTIVES</button>
+      <button class="tab-btn" data-tab="graph">GRAPH</button>
+      <button class="tab-btn" data-tab="timeline">TIMELINE</button>
     </div>
 
-    <div id="results-area">
-      <div id="placeholder">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24"
-             fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="10" r="3"/>
-          <path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 13-8 13S4 15.25 4 10a8 8 0 0 1 8-8z"/>
-        </svg>
-        <span>Click a location on the map,<br>then press <strong>Discover</strong>.</span>
+    <!-- Tab panels -->
+    <div id="tab-panels">
+
+      <!-- NARRATIVE -->
+      <div class="tab-pane active" id="tab-narrative">
+        <div class="idle-placeholder">
+          <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="1.3">
+            <circle cx="12" cy="10" r="3"/>
+            <path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 13-8 13S4 15.25 4 10a8 8 0 0 1 8-8z"/>
+          </svg>
+          <span>Click a location on the map,<br>then press <strong>Discover</strong>.</span>
+        </div>
       </div>
 
-      <div id="spinner">
-        <div class="spin-ring"></div>
-        <span>Fetching historical context…</span>
+      <!-- PERSPECTIVES -->
+      <div class="tab-pane" id="tab-perspectives">
+        <div class="idle-placeholder">
+          <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="1.3">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>Discover a location to see<br>multi-perspective analysis.</span>
+        </div>
       </div>
 
-      <div id="error-box"></div>
-
-      <div id="chunks"></div>
-
-      <div id="sources-section" style="display:none">
-        <div id="sources-title">Sources</div>
-        <div id="sources-list"></div>
+      <!-- GRAPH -->
+      <div class="tab-pane" id="tab-graph">
+        <div class="idle-placeholder">
+          <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="1.3">
+            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+          <span>Discover a location to see<br>its knowledge graph.</span>
+        </div>
       </div>
-    </div>
-  </div>
-</div>
+
+      <!-- TIMELINE -->
+      <div class="tab-pane" id="tab-timeline">
+        <div class="idle-placeholder">
+          <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="1.3">
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <polyline points="8 8 3 12 8 16"/>
+            <polyline points="16 8 21 12 16 16"/>
+          </svg>
+          <span>Discover a location to explore<br>its timeline.</span>
+        </div>
+      </div>
+
+    </div><!-- /tab-panels -->
+  </div><!-- /panel -->
+</div><!-- /app -->
+
+<!-- Era tooltip -->
+<div id="era-tooltip"><div class="tip-year"></div><div class="tip-body"></div></div>
 
 <script>
-  const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8000';
 
-  // ── Map setup ──────────────────────────────────────────────────────────────
-  const map = L.map('map', { zoomControl: true }).setView([20, 0], 2);
+// ── Personas ─────────────────────────────────────────────────────────────────
+const PERSONAS = [
+  {
+    id: 'archaeologist', emoji: '🏛️', label: 'Archaeologist',
+    subtitle: 'Material culture & chronology',
+    keywords: ['ancient', 'artifact', 'excavat', 'settlement', 'structure', 'ruin', 'century', 'period', 'era', 'civilization', 'built', 'construct', 'stone', 'temple', 'palace', 'fort', 'found', 'remains', 'arch'],
+    color: '#6c8ebf',
+  },
+  {
+    id: 'political', emoji: '⚔️', label: 'Political Analyst',
+    subtitle: 'Power, conflict & governance',
+    keywords: ['war', 'empire', 'ruler', 'revolution', 'government', 'conflict', 'sovereignty', 'conquest', 'occupation', 'treaty', 'power', 'territory', 'dynasty', 'kingdom', 'republic', 'revolt', 'coup', 'annexe', 'independence'],
+    color: '#c04848',
+  },
+  {
+    id: 'folklore', emoji: '🌿', label: 'Folklorist',
+    subtitle: 'Myths, tradition & oral history',
+    keywords: ['legend', 'myth', 'tradition', 'ritual', 'ceremony', 'belief', 'spirit', 'sacred', 'festival', 'story', 'folk', 'culture', 'custom', 'tale', 'shrine', 'pilgrim', 'worship', 'deity', 'prophecy'],
+    color: '#4a9a6a',
+  },
+  {
+    id: 'trauma', emoji: '💔', label: 'Trauma Historian',
+    subtitle: 'Suffering, loss & memory',
+    keywords: ['massacre', 'genocide', 'displacement', 'slav', 'suffering', 'victim', 'atrocity', 'persecution', 'famine', 'violence', 'oppression', 'death', 'forced', 'refugee', 'ethnic', 'exile', 'purge', 'executed'],
+    color: '#c06040',
+  },
+];
 
-  // CartoDB Dark Matter — free, no key required
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+const TYPE_COLORS = {
+  PLACE:  '#6c8ebf',
+  PERSON: '#e8a838',
+  EVENT:  '#a860d0',
+  DATE:   '#50b878',
+  OTHER:  '#7a7f94',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let selectedLat = null;
+let selectedLon = null;
+let currentMarker = null;
+let activeTab = 'narrative';
+let graphData = null;
+let graphRendered = false;
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([20, 0], 2);
+
+const tileLayer = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
     maxZoom: 19,
-  }).addTo(map);
+  }
+).addTo(map);
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  let selectedLat = null;
-  let selectedLon = null;
-  let currentMarker = null;
+const pulseIcon = L.divIcon({
+  className: '',
+  html: '<div class="pulse-dot"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+});
 
-  // ── DOM refs ───────────────────────────────────────────────────────────────
-  const coordsText    = document.getElementById('coords-text');
-  const queryInput    = document.getElementById('query-input');
-  const discoverBtn   = document.getElementById('discover-btn');
-  const spinner       = document.getElementById('spinner');
-  const placeholder   = document.getElementById('placeholder');
-  const chunksEl      = document.getElementById('chunks');
-  const errorBox      = document.getElementById('error-box');
-  const sourcesSection = document.getElementById('sources-section');
-  const sourcesList   = document.getElementById('sources-list');
+map.on('click', async (e) => {
+  selectedLat = e.latlng.lat;
+  selectedLon = e.latlng.lng;
 
-  // ── Map click ─────────────────────────────────────────────────────────────
-  const pinIcon = L.divIcon({ className: '', html: '<div class="echomaps-pin"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+  document.getElementById('coords-display').textContent =
+    `${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}`;
+  document.getElementById('discover-btn').disabled = false;
 
-  map.on('click', (e) => {
-    selectedLat = e.latlng.lat;
-    selectedLon = e.latlng.lng;
+  if (currentMarker) map.removeLayer(currentMarker);
+  currentMarker = L.marker([selectedLat, selectedLon], { icon: pulseIcon }).addTo(map);
 
-    coordsText.textContent = `${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}`;
-    discoverBtn.disabled = false;
+  // Reverse geocode for display name
+  document.getElementById('location-name').textContent = 'Loading…';
+  const name = await reverseGeocode(selectedLat, selectedLon);
+  document.getElementById('location-name').textContent = name;
 
-    if (currentMarker) map.removeLayer(currentMarker);
-    currentMarker = L.marker([selectedLat, selectedLon], { icon: pinIcon }).addTo(map);
+  resetToIdle();
+});
 
-    clearResults();
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    switchTab(tab);
+  });
+});
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-pane').forEach(p => {
+    const isActive = p.id === `tab-${tab}`;
+    p.classList.toggle('active', isActive);
+    // Trigger reflow then fade in
+    if (isActive) requestAnimationFrame(() => requestAnimationFrame(() => p.classList.add('visible')));
+    else p.classList.remove('visible');
   });
 
-  // ── Discover ──────────────────────────────────────────────────────────────
-  discoverBtn.addEventListener('click', async () => {
-    if (selectedLat === null) return;
+  // Lazy render graph when tab becomes active
+  if (tab === 'graph' && graphData && !graphRendered) {
+    renderGraph(graphData.nodes, graphData.edges);
+    graphRendered = true;
+  }
+}
 
-    const query = queryInput.value.trim() || 'Tell me the history of this place';
+// ── Discover ──────────────────────────────────────────────────────────────────
+document.getElementById('discover-btn').addEventListener('click', doDiscover);
+document.getElementById('query-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('discover-btn').disabled) doDiscover();
+});
 
-    setLoading(true);
-    clearResults();
+async function doDiscover() {
+  if (selectedLat === null) return;
+  const query = document.getElementById('query-input').value.trim() || 'Tell me the history of this place';
 
-    try {
-      const res = await fetch(`${API_BASE}/api/location`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: selectedLat, lon: selectedLon, query }),
-      });
+  showSkeletons();
+  document.getElementById('discover-btn').disabled = true;
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+  try {
+    const res = await fetch(`${API_BASE}/api/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: selectedLat, lon: selectedLon, query }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    renderAll(data);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    document.getElementById('discover-btn').disabled = false;
+  }
+}
+
+// ── Render all tabs ───────────────────────────────────────────────────────────
+function renderAll(data) {
+  const chunks = (data.context || '')
+    .split('\n\n---\n\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const fullText = chunks.join(' ');
+
+  renderNarrative(chunks, data.sources || []);
+  renderPerspectives(chunks, fullText);
+
+  graphData = extractEntities(fullText);
+  graphRendered = false;
+  if (activeTab === 'graph') {
+    renderGraph(graphData.nodes, graphData.edges);
+    graphRendered = true;
+  } else {
+    renderGraphPlaceholder(graphData.nodes.length);
+  }
+
+  renderTimeline(extractTimelineEvents(fullText));
+
+  // Apply sentiment-based map filter
+  const sentiment = analyzeSentiment(fullText);
+  applyMapFilter(sentiment);
+
+  // Fade in all panes
+  document.querySelectorAll('.tab-pane').forEach(p => {
+    if (p.classList.contains('active')) {
+      requestAnimationFrame(() => requestAnimationFrame(() => p.classList.add('visible')));
+    }
+  });
+}
+
+// ── NARRATIVE ─────────────────────────────────────────────────────────────────
+function renderNarrative(chunks, sources) {
+  const pane = document.getElementById('tab-narrative');
+  const locationName = document.getElementById('location-name').textContent;
+
+  const bodyHtml = chunks.length
+    ? chunks.map(c => `<p>${escHtml(c)}</p>`).join('')
+    : `<p style="color:var(--text-muted)">No historical information found for this location.</p>`;
+
+  const sourcesHtml = sources.length
+    ? `<div class="sources-label">Sources</div>
+       <div class="source-chips">
+         ${sources.map(s => {
+           const href = s.url ? `href="${escHtml(s.url)}" target="_blank" rel="noopener"` : '';
+           const tag = s.url ? 'a' : 'span';
+           const icon = s.source === 'wikipedia' ? 'W' : s.source === 'wikidata' ? 'D' : '↗';
+           return `<${tag} class="source-chip" ${href}><span class="src-icon">${icon}</span>${escHtml(s.title || s.source)}</${tag}>`;
+         }).join('')}
+       </div>`
+    : '';
+
+  pane.innerHTML = `
+    <div class="narrative-location">${escHtml(locationName)}</div>
+    <div class="narrative-body">${bodyHtml}</div>
+    ${sourcesHtml}
+  `;
+}
+
+// ── PERSPECTIVES ──────────────────────────────────────────────────────────────
+function renderPerspectives(chunks, fullText) {
+  const pane = document.getElementById('tab-perspectives');
+  const sentences = fullText.match(/[^.!?]{20,}[.!?]/g) || [];
+
+  const cards = PERSONAS.map(persona => {
+    const relevant = sentences
+      .filter(s => persona.keywords.some(kw => s.toLowerCase().includes(kw)))
+      .slice(0, 2);
+
+    const excerpt = relevant.length
+      ? relevant.join(' ').trim()
+      : `No significant ${persona.label.toLowerCase()} indicators found in the available records for this location.`;
+
+    const hits = persona.keywords.filter(kw => fullText.toLowerCase().includes(kw)).length;
+    const confidence = Math.min(0.95, 0.28 + (hits / persona.keywords.length) * 0.67);
+    const pct = Math.round(confidence * 100);
+
+    return `
+      <div class="persona-card">
+        <div class="persona-header">
+          <span class="persona-emoji">${persona.emoji}</span>
+          <div>
+            <div class="persona-label">${persona.label}</div>
+            <div class="persona-type">${persona.subtitle}</div>
+          </div>
+        </div>
+        <div class="persona-excerpt">${escHtml(excerpt)}</div>
+        <div class="confidence-row">
+          <span class="confidence-label">Relevance</span>
+          <div class="confidence-track">
+            <div class="confidence-fill sk" style="width:${pct}%; background:${persona.color}; animation:none;"></div>
+          </div>
+          <span class="confidence-pct">${pct}%</span>
+        </div>
+      </div>`;
+  });
+
+  pane.innerHTML = cards.join('');
+}
+
+// ── GRAPH ─────────────────────────────────────────────────────────────────────
+function extractEntities(text) {
+  const entityMap = new Map();
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
+  const allEdges = [];
+
+  const PERSON_TRIGGERS  = new Set(['king','queen','emperor','sultan','lord','general','president','sheikh','chief','duke','prince','princess','khan','pope','bishop','pharaoh','tsar','czar','governor','caliph','vizier']);
+  const EVENT_TRIGGERS   = new Set(['battle','war','treaty','revolution','siege','conquest','invasion','uprising','rebellion','massacre','campaign','crusade','raid','attack']);
+
+  sentences.forEach(sentence => {
+    const tokens = sentence.trim().split(/\s+/);
+    const sentEnts = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const raw = tokens[i];
+      const clean = raw.replace(/[^\w]/g, '');
+      if (clean.length < 3 || /^\d+$/.test(clean)) continue;
+
+      if (i > 0 && /^[A-Z]/.test(clean) && clean === clean[0].toUpperCase() + clean.slice(1)) {
+        // Build multi-word proper noun
+        let name = clean;
+        let j = i;
+        while (j + 1 < tokens.length) {
+          const nextClean = tokens[j + 1].replace(/[^\w]/g, '');
+          if (nextClean.length > 1 && /^[A-Z]/.test(nextClean)) { j++; name += ' ' + nextClean; }
+          else break;
+        }
+        i = j;
+
+        const prevWord = (tokens[Math.max(0, i - name.split(' ').length - 1)] || '').toLowerCase().replace(/[^\w]/g,'');
+        let type = 'PLACE';
+        if (PERSON_TRIGGERS.has(prevWord)) type = 'PERSON';
+        else if (EVENT_TRIGGERS.has(prevWord)) type = 'EVENT';
+
+        const existing = entityMap.get(name) || { type, count: 0 };
+        existing.count++;
+        entityMap.set(name, existing);
+        sentEnts.push(name);
       }
+    }
 
-      const data = await res.json();
-      renderResults(data);
-    } catch (err) {
-      showError(err.message);
-    } finally {
-      setLoading(false);
+    for (let a = 0; a < sentEnts.length; a++) {
+      for (let b = a + 1; b < Math.min(a + 4, sentEnts.length); b++) {
+        allEdges.push({ source: sentEnts[a], target: sentEnts[b] });
+      }
     }
   });
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  function renderResults(data) {
-    placeholder.style.display = 'none';
+  const topEnts = [...entityMap.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 22);
 
-    const context = data.context || '';
-    const chunks = context
-      .split('\n\n---\n\n')
-      .map(s => s.trim())
-      .filter(Boolean);
+  const nodeSet = new Set(topEnts.map(([k]) => k));
+  const nodes = topEnts.map(([id, { type, count }]) => ({ id, type, count }));
 
-    if (chunks.length === 0) {
-      chunksEl.innerHTML = '<div class="chunk" style="color:var(--muted)">No historical information found for this location.</div>';
+  const edgeMap = new Map();
+  allEdges
+    .filter(e => nodeSet.has(e.source) && nodeSet.has(e.target) && e.source !== e.target)
+    .forEach(e => {
+      const key = [e.source, e.target].sort().join('\0');
+      if (!edgeMap.has(key)) edgeMap.set(key, { source: e.source, target: e.target, weight: 0 });
+      edgeMap.get(key).weight++;
+    });
+
+  return { nodes, edges: [...edgeMap.values()].slice(0, 45) };
+}
+
+function renderGraphPlaceholder(nodeCount) {
+  const pane = document.getElementById('tab-graph');
+  if (nodeCount < 3) {
+    pane.innerHTML = `<div class="timeline-empty">Insufficient entity data to render a graph.</div>`;
+    return;
+  }
+  pane.innerHTML = `
+    <div id="graph-container"><div class="graph-no-data" style="color:var(--text-muted);font-size:0.8rem;">Switch to Graph tab to render</div></div>
+    <div class="graph-legend">${buildLegendHtml()}</div>
+    <div class="graph-tip">Click a node to highlight connections · Drag to reposition</div>
+  `;
+}
+
+function renderGraph(nodes, edges) {
+  if (!nodes || nodes.length < 3) {
+    document.getElementById('tab-graph').innerHTML =
+      `<div class="timeline-empty">Insufficient entity data to render a graph.</div>`;
+    return;
+  }
+
+  const pane = document.getElementById('tab-graph');
+  pane.innerHTML = `
+    <div id="graph-container"></div>
+    <div class="graph-legend">${buildLegendHtml()}</div>
+    <div class="graph-tip">Click a node to highlight connections · Drag to reposition</div>
+  `;
+
+  const container = document.getElementById('graph-container');
+  const W = container.clientWidth  || 380;
+  const H = container.clientHeight || 340;
+
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMidYMid meet');
+
+  const defs = svg.append('defs');
+  Object.entries(TYPE_COLORS).forEach(([type, color]) => {
+    const grad = defs.append('radialGradient').attr('id', `grad-${type}`);
+    grad.append('stop').attr('offset', '0%').attr('stop-color', color).attr('stop-opacity', 0.9);
+    grad.append('stop').attr('offset', '100%').attr('stop-color', color).attr('stop-opacity', 0.5);
+  });
+
+  // Build node index for d3 link
+  const nodeById = new Map(nodes.map((n, i) => [n.id, i]));
+  const linkData = edges
+    .filter(e => nodeById.has(e.source) && nodeById.has(e.target))
+    .map(e => ({ source: nodeById.get(e.source), target: nodeById.get(e.target), weight: e.weight }));
+
+  const nodeData = nodes.map((n, i) => ({ ...n, index: i }));
+
+  const simulation = d3.forceSimulation(nodeData)
+    .force('link', d3.forceLink(linkData).distance(d => 70 + (d.weight ? 0 : 20)).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-120))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('collision', d3.forceCollide(d => nodeRadius(d) + 6));
+
+  const linkEl = svg.append('g').selectAll('line')
+    .data(linkData).enter().append('line')
+    .attr('stroke', '#2a2d3e')
+    .attr('stroke-width', d => Math.min(3, 0.8 + (d.weight || 0) * 0.4))
+    .attr('opacity', 0.6);
+
+  const nodeEl = svg.append('g').selectAll('g')
+    .data(nodeData).enter().append('g')
+    .style('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag',  (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('end',   (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+
+  nodeEl.append('circle')
+    .attr('r', nodeRadius)
+    .attr('fill', d => `url(#grad-${d.type})`)
+    .attr('stroke', d => TYPE_COLORS[d.type] || TYPE_COLORS.OTHER)
+    .attr('stroke-width', 1.2);
+
+  nodeEl.append('text')
+    .text(d => truncate(d.id, 14))
+    .attr('text-anchor', 'middle')
+    .attr('dy', d => nodeRadius(d) + 11)
+    .attr('font-size', '9px')
+    .attr('fill', '#9098b8')
+    .attr('pointer-events', 'none');
+
+  // Click to highlight
+  nodeEl.on('click', (event, clicked) => {
+    const connectedIds = new Set([clicked.index]);
+    linkData.forEach(l => {
+      if (l.source.index === clicked.index) connectedIds.add(l.target.index);
+      if (l.target.index === clicked.index) connectedIds.add(l.source.index);
+    });
+
+    nodeEl.select('circle')
+      .attr('opacity', d => connectedIds.has(d.index) ? 1 : 0.2)
+      .attr('stroke-width', d => d.index === clicked.index ? 2.5 : 1.2);
+
+    linkEl.attr('opacity', l =>
+      (l.source.index === clicked.index || l.target.index === clicked.index) ? 0.9 : 0.08
+    );
+  });
+
+  // Click background to reset
+  svg.on('click', (event) => {
+    if (event.target.tagName === 'svg' || event.target.tagName === 'rect') {
+      nodeEl.select('circle').attr('opacity', 1).attr('stroke-width', 1.2);
+      linkEl.attr('opacity', 0.6);
+    }
+  });
+
+  simulation.on('tick', () => {
+    linkEl
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+    nodeEl.attr('transform', d => `translate(${clamp(d.x, 20, W-20)},${clamp(d.y, 20, H-20)})`);
+  });
+}
+
+function nodeRadius(d) { return Math.min(16, 5 + (d.count || 1) * 2.5); }
+function buildLegendHtml() {
+  return Object.entries(TYPE_COLORS)
+    .filter(([t]) => t !== 'OTHER')
+    .map(([type, color]) =>
+      `<div class="legend-item"><div class="legend-dot" style="background:${color}"></div>${type}</div>`)
+    .join('');
+}
+
+// ── TIMELINE ──────────────────────────────────────────────────────────────────
+function extractTimelineEvents(text) {
+  const yearRegex = /\b(1[0-9]{3}|[2-9][0-9]{2})\b/g;
+  const rawEvents = [];
+  let m;
+  while ((m = yearRegex.exec(text)) !== null) {
+    const year = parseInt(m[1]);
+    const start = Math.max(0, m.index - 90);
+    const end   = Math.min(text.length, m.index + 90);
+    const ctx   = text.substring(start, end);
+
+    const dark = /war|battle|massacre|destruction|died|killed|destroyed|siege|plague|famine|conquest|invasion|burned|collapse|fall|sack|looted|slaughter/i;
+    const good = /peace|founded|built|established|flourish|golden|prosperity|renaissance|grew|thriv|liberat|restor|independence|blossom|trade|art|culture/i;
+
+    let sentiment = 'neutral';
+    if (dark.test(ctx)) sentiment = 'dark';
+    else if (good.test(ctx)) sentiment = 'positive';
+
+    rawEvents.push({ year, context: ctx.trim(), sentiment });
+  }
+
+  // Deduplicate: keep richest context per year
+  const byYear = new Map();
+  rawEvents.forEach(e => {
+    const prev = byYear.get(e.year);
+    if (!prev || e.context.length > prev.context.length) byYear.set(e.year, e);
+  });
+
+  return [...byYear.values()].sort((a, b) => a.year - b.year).slice(0, 24);
+}
+
+function renderTimeline(events) {
+  const pane = document.getElementById('tab-timeline');
+  if (!events.length) {
+    pane.innerHTML = `<div class="timeline-empty">No temporal data found in the available sources.</div>`;
+    return;
+  }
+
+  const minY = events[0].year;
+  const maxY = events[events.length - 1].year;
+  const span = Math.max(1, maxY - minY);
+
+  const trackItems = events.map((e, i) => {
+    // Width proportional to gap to next event
+    const nextYear = events[i + 1]?.year ?? (e.year + Math.round(span / events.length));
+    const gap = Math.max(1, nextYear - e.year);
+    const width = Math.max(44, Math.round((gap / span) * 600));
+
+    return `<div class="era-segment ${e.sentiment}" style="min-width:${width}px;"
+       data-year="${e.year}" data-context="${escHtml(e.context)}" data-sentiment="${e.sentiment}">
+       ${e.year}
+    </div>`;
+  }).join('');
+
+  pane.innerHTML = `
+    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;">
+      Temporal span: <strong style="color:var(--text-dim)">${minY} – ${maxY} CE</strong>
+      &nbsp;·&nbsp; ${events.length} events
+    </div>
+    <div id="timeline-scroll">
+      <div id="timeline-track">${trackItems}</div>
+    </div>
+    <div style="display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;">
+      <div class="legend-item"><div class="legend-dot" style="background:#2d9a6a;border-radius:2px;width:12px;height:8px;"></div>Positive era</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#9a2d2d;border-radius:2px;width:12px;height:8px;"></div>Dark period</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3a3d50;border-radius:2px;width:12px;height:8px;"></div>Neutral</div>
+    </div>
+  `;
+
+  // Tooltip logic
+  const tooltip = document.getElementById('era-tooltip');
+  pane.querySelectorAll('.era-segment').forEach(seg => {
+    seg.addEventListener('mouseenter', e => {
+      tooltip.querySelector('.tip-year').textContent = seg.dataset.year + ' CE';
+      tooltip.querySelector('.tip-body').textContent = seg.dataset.context;
+      tooltip.classList.add('visible');
+    });
+    seg.addEventListener('mousemove', e => {
+      const x = Math.min(e.clientX + 12, window.innerWidth - 300);
+      const y = Math.min(e.clientY + 12, window.innerHeight - 120);
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+    });
+    seg.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+  });
+}
+
+// ── Sentiment → map filter ────────────────────────────────────────────────────
+function analyzeSentiment(text) {
+  const dark     = ['war','battle','massacre','destruction','death','killed','destroyed','siege','plague','famine','conquest','invasion','slavery','oppression','genocide','violence','atrocity'];
+  const positive = ['peace','prosperity','flourish','golden','renaissance','thrived','liberated','independence','culture','heritage','art','festival','trade','founded','built'];
+  const lower    = text.toLowerCase();
+  const d = dark.filter(w => lower.includes(w)).length;
+  const p = positive.filter(w => lower.includes(w)).length;
+  return (p - d) / Math.max(1, p + d);
+}
+
+function applyMapFilter(sentiment) {
+  const tilePanes = document.querySelectorAll('.leaflet-tile-pane');
+  tilePanes.forEach(pane => {
+    if (sentiment > 0.25) {
+      pane.style.transition = 'filter 1.2s ease';
+      pane.style.filter = 'hue-rotate(30deg) saturate(1.25)';
+    } else if (sentiment < -0.25) {
+      pane.style.transition = 'filter 1.2s ease';
+      pane.style.filter = 'saturate(0.35) hue-rotate(190deg)';
     } else {
-      chunksEl.innerHTML = chunks
-        .map(c => `<div class="chunk">${escapeHtml(c)}</div>`)
-        .join('');
+      pane.style.transition = 'filter 1.2s ease';
+      pane.style.filter = '';
     }
-    chunksEl.classList.add('active');
+  });
+}
 
-    const sources = data.sources || [];
-    if (sources.length > 0) {
-      sourcesList.innerHTML = sources
-        .map(s => {
-          const href = s.url ? `href="${escapeHtml(s.url)}" target="_blank" rel="noopener"` : '';
-          const tag = s.url ? 'a' : 'span';
-          return `<${tag} class="source-chip" ${href}>${escapeHtml(s.title || s.source)}</${tag}>`;
-        })
-        .join('');
-      sourcesSection.style.display = 'block';
-    }
-  }
+// ── Skeleton loaders ──────────────────────────────────────────────────────────
+function showSkeletons() {
+  document.getElementById('tab-narrative').innerHTML = `
+    <div class="sk sk-title"></div>
+    <div class="sk sk-line w90"></div>
+    <div class="sk sk-line w75"></div>
+    <div class="sk sk-line w90"></div>
+    <div class="sk sk-line w60"></div>
+    <div class="sk sk-line w90"></div>
+    <div class="sk sk-line w75"></div>
+    <div class="sk sk-line w45"></div>
+    <br>
+    <div class="sk sk-line w90"></div>
+    <div class="sk sk-line w75"></div>
+    <div class="sk sk-line w60"></div>
+  `;
 
-  function showError(msg) {
-    placeholder.style.display = 'none';
-    errorBox.textContent = `Error: ${msg}`;
-    errorBox.classList.add('active');
-  }
+  document.getElementById('tab-perspectives').innerHTML = `
+    <div class="sk sk-card"></div>
+    <div class="sk sk-card"></div>
+    <div class="sk sk-card"></div>
+    <div class="sk sk-card"></div>
+  `;
 
-  function clearResults() {
-    chunksEl.innerHTML = '';
-    chunksEl.classList.remove('active');
-    errorBox.textContent = '';
-    errorBox.classList.remove('active');
-    sourcesList.innerHTML = '';
-    sourcesSection.style.display = 'none';
-    placeholder.style.display = 'none';
-  }
+  document.getElementById('tab-graph').innerHTML = `
+    <div class="sk" style="height:340px;border-radius:var(--radius);"></div>
+  `;
 
-  function setLoading(on) {
-    spinner.classList.toggle('active', on);
-    discoverBtn.disabled = on;
-    if (on) placeholder.style.display = 'none';
-  }
+  document.getElementById('tab-timeline').innerHTML = `
+    <div class="sk" style="height:56px;border-radius:var(--radius);"></div>
+  `;
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  // Immediately visible for the active tab
+  document.querySelectorAll('.tab-pane.active').forEach(p => {
+    requestAnimationFrame(() => requestAnimationFrame(() => p.classList.add('visible')));
+  });
+}
+
+// ── Error ─────────────────────────────────────────────────────────────────────
+function showError(msg) {
+  document.getElementById('tab-narrative').innerHTML =
+    `<div class="error-box">Error: ${escHtml(msg)}</div>`;
+  document.querySelectorAll('.tab-pane.active').forEach(p => {
+    requestAnimationFrame(() => requestAnimationFrame(() => p.classList.add('visible')));
+  });
+}
+
+// ── Reset to idle ─────────────────────────────────────────────────────────────
+function resetToIdle() {
+  graphData = null;
+  graphRendered = false;
+  const placeholders = {
+    'tab-narrative':    `<div class="idle-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 13-8 13S4 15.25 4 10a8 8 0 0 1 8-8z"/></svg><span>Press <strong>Discover</strong> to explore this location.</span></div>`,
+    'tab-perspectives': `<div class="idle-placeholder"><span>Press <strong>Discover</strong> to load perspectives.</span></div>`,
+    'tab-graph':        `<div class="idle-placeholder"><span>Press <strong>Discover</strong> to build the knowledge graph.</span></div>`,
+    'tab-timeline':     `<div class="idle-placeholder"><span>Press <strong>Discover</strong> to build the timeline.</span></div>`,
+  };
+  Object.entries(placeholders).forEach(([id, html]) => {
+    document.getElementById(id).innerHTML = html;
+  });
+  applyMapFilter(0);
+}
+
+// ── Reverse geocode ───────────────────────────────────────────────────────────
+async function reverseGeocode(lat, lon) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const data = await res.json();
+    const a = data.address || {};
+    return a.city || a.town || a.village || a.hamlet || a.county ||
+           a.state || a.country || data.display_name?.split(',')[0] || 'Unknown Location';
+  } catch {
+    return `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`;
   }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+// Initial tab visibility
+document.getElementById('tab-narrative').classList.add('visible');
 </script>
 </body>
 </html>
