@@ -21,6 +21,8 @@ from backend.agents.historian import run_persona_agent
 from backend.agents.personas import PERSONAS
 from backend.agents.synthesizer import synthesis_agent
 from backend.config import GROQ_API_KEY
+from backend.knowledge.extractor import extract_entities
+from backend.knowledge.graph_builder import build_knowledge_graph
 from backend.rag.retriever import retrieve_context_for_location
 
 log = logging.getLogger(__name__)
@@ -141,9 +143,21 @@ def synthesize_node(state: EchoMapsState) -> EchoMapsState:
 
 
 def extract_entities_node(state: EchoMapsState) -> EchoMapsState:
-    """Node 4 — NER on the final narrative (implementation in next commit)."""
-    log.info("[extract_entities] placeholder — returning empty graph")
-    return {**state, "knowledge_graph": {"nodes": [], "edges": []}}
+    """Node 4 — NER on the final narrative, then build the knowledge graph."""
+    narrative     = state.get("final_narrative", "")
+    location_id   = state.get("location_id", "unknown")
+    location_name = state.get("location_name", "Unknown Location")
+
+    # Also run NER over the raw context chunks for richer entity coverage
+    context_text = " ".join(state.get("context_chunks", []))
+    combined_text = f"{narrative}\n\n{context_text}".strip()
+
+    log.info("[extract_entities] running NER on %d chars", len(combined_text))
+    entities = extract_entities(combined_text)
+    log.info("[extract_entities] found %d unique entities", len(entities))
+
+    kg = build_knowledge_graph(entities, location_id, location_name)
+    return {**state, "knowledge_graph": kg}
 
 
 # ── Graph assembly ────────────────────────────────────────────────────────────

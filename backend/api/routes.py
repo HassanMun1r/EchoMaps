@@ -5,11 +5,12 @@ FastAPI route definitions.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.rag.retriever import retrieve_context_for_location
+from backend.agents.graph import run_echomaps_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -21,22 +22,57 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class LocationRequest(BaseModel):
-    lat: float = Field(..., ge=-90, le=90)
-    lon: float = Field(..., ge=-180, le=180)
-    query: str = Field(default="Tell me the history of this place", max_length=500)
+    lat:           float = Field(..., ge=-90,   le=90)
+    lon:           float = Field(..., ge=-180,  le=180)
+    location_name: str   = Field(default="",   max_length=200)
+    query:         str   = Field(default="Tell me the history of this place",
+                                  max_length=500)
 
 
 class Source(BaseModel):
-    title: str
-    url: str
+    title:  str
+    url:    str
     source: str
-    score: float
+    score:  float
+
+
+class Interpretation(BaseModel):
+    persona:        str
+    interpretation: str
+    confidence:     float
+
+
+class GraphNode(BaseModel):
+    id:    str
+    label: str
+    type:  str
+
+
+class GraphEdge(BaseModel):
+    source:   str
+    target:   str
+    relation: str
+
+
+class KnowledgeGraph(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
 
 
 class LocationResponse(BaseModel):
-    context: str
+    # Core narrative
+    narrative:      str
+    location_name:  str
+    location_id:    str
+
+    # Per-persona outputs
+    interpretations: list[Interpretation]
+
+    # RAG sources
     sources: list[Source]
-    location_id: str
+
+    # Knowledge graph
+    knowledge_graph: KnowledgeGraph
 
 
 # ---------------------------------------------------------------------------
@@ -50,31 +86,56 @@ async def health() -> dict[str, str]:
 
 @router.post("/api/location", response_model=LocationResponse)
 async def get_location_context(req: LocationRequest) -> LocationResponse:
-    """Retrieve historical/cultural context chunks for a map coordinate."""
+    """Run the full EchoMaps LangGraph pipeline for a map coordinate.
+
+    Returns a synthesised multi-perspective narrative, individual persona
+    interpretations, RAG sources, and an extracted knowledge graph.
+    """
+    # Use provided name or fall back to coordinate string
+    location_name = req.location_name.strip() or f"{req.lat:.4f}, {req.lon:.4f}"
+
     try:
-        result = retrieve_context_for_location(req.lat, req.lon, req.query)
+        result: dict[str, Any] = run_echomaps_pipeline(req.lat, req.lon, location_name)
     except Exception as exc:
-        log.exception("retriever error: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to retrieve context") from exc
+        log.exception("Pipeline error for (%.4f, %.4f): %s", req.lat, req.lon, exc)
+        raise HTTPException(status_code=500, detail="Pipeline failed") from exc
 
-    chunks: list[str] = result.get("chunks", [])
-    if not chunks:
-        context_text = "No historical information found for this location."
-    else:
-        context_text = "\n\n---\n\n".join(chunks)
+    # ── Narrative ────────────────────────────────────────────────────────────
+    narrative = result.get("final_narrative") or "No narrative could be generated."
 
+    # ── Interpretations ──────────────────────────────────────────────────────
+    interpretations = [
+        Interpretation(
+            persona=i.get("persona", ""),
+            interpretation=i.get("interpretation", ""),
+            confidence=float(i.get("confidence", 0.0)),
+        )
+        for i in result.get("interpretations", [])
+    ]
+
+    # ── Sources ──────────────────────────────────────────────────────────────
     sources = [
         Source(
             title=s.get("title", ""),
             url=s.get("url", ""),
             source=s.get("source", ""),
-            score=s.get("score", 0.0),
+            score=float(s.get("score", 0.0)),
         )
         for s in result.get("sources", [])
     ]
 
+    # ── Knowledge graph ──────────────────────────────────────────────────────
+    raw_kg = result.get("knowledge_graph", {"nodes": [], "edges": []})
+    knowledge_graph = KnowledgeGraph(
+        nodes=[GraphNode(**n) for n in raw_kg.get("nodes", [])],
+        edges=[GraphEdge(**e) for e in raw_kg.get("edges", [])],
+    )
+
     return LocationResponse(
-        context=context_text,
-        sources=sources,
+        narrative=narrative,
+        location_name=location_name,
         location_id=result.get("location_id", ""),
+        interpretations=interpretations,
+        sources=sources,
+        knowledge_graph=knowledge_graph,
     )
