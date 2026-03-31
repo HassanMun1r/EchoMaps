@@ -6,4 +6,7 @@ requests==2.32.3
 python-dotenv==1.0.1
 groq==0.14.0
 langchain-core==0.3.35
+langchain-groq==0.3.2
 langgraph==0.2.74
+spacy>=3.7,<4.0
+networkx>=3.3
