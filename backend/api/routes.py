@@ -59,6 +59,14 @@ class KnowledgeGraph(BaseModel):
     edges: list[GraphEdge]
 
 
+class TimelineEntry(BaseModel):
+    era:          str
+    period_start: int
+    period_end:   int
+    score:        float   # -1.0 dark → 0.0 neutral → +1.0 positive
+    summary:      str
+
+
 class LocationResponse(BaseModel):
     # Core narrative
     narrative:      str
@@ -73,6 +81,9 @@ class LocationResponse(BaseModel):
 
     # Knowledge graph
     knowledge_graph: KnowledgeGraph
+
+    # Temporal sentiment timeline
+    timeline: list[TimelineEntry]
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +142,18 @@ async def get_location_context(req: LocationRequest) -> LocationResponse:
         edges=[GraphEdge(**e) for e in raw_kg.get("edges", [])],
     )
 
+    # ── Timeline ──────────────────────────────────────────────────────────────
+    timeline = [
+        TimelineEntry(
+            era=t.get("era", ""),
+            period_start=int(t.get("period_start", 0)),
+            period_end=int(t.get("period_end", 0)),
+            score=float(t.get("score", 0.0)),
+            summary=t.get("summary", ""),
+        )
+        for t in result.get("timeline", [])
+    ]
+
     return LocationResponse(
         narrative=narrative,
         location_name=location_name,
@@ -138,4 +161,5 @@ async def get_location_context(req: LocationRequest) -> LocationResponse:
         interpretations=interpretations,
         sources=sources,
         knowledge_graph=knowledge_graph,
+        timeline=timeline,
     )

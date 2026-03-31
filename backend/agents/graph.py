@@ -2,7 +2,7 @@
 LangGraph pipeline for EchoMaps.
 
 State flow:
-  fetch_context → run_historians → synthesize → extract_entities → END
+  fetch_context → run_historians → synthesize → extract_entities → score_timeline → END
 
 Exposed entry point:
   run_echomaps_pipeline(lat, lon, location_name) -> dict
@@ -24,6 +24,7 @@ from backend.config import GROQ_API_KEY
 from backend.knowledge.extractor import extract_entities
 from backend.knowledge.graph_builder import build_knowledge_graph
 from backend.rag.retriever import retrieve_context_for_location
+from backend.temporal import score_temporal_sentiment
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +48,11 @@ class EchoMapsState(TypedDict, total=False):
     # Set by synthesize_node
     final_narrative: str
 
-    # Set by extract_entities_node (populated in next commit)
+    # Set by extract_entities_node
     knowledge_graph: dict[str, Any]
+
+    # Set by score_timeline_node
+    timeline: list[dict[str, Any]]
 
 
 # ── Groq client (module-level singleton) ─────────────────────────────────────
@@ -160,21 +164,39 @@ def extract_entities_node(state: EchoMapsState) -> EchoMapsState:
     return {**state, "knowledge_graph": kg}
 
 
+def score_timeline_node(state: EchoMapsState) -> EchoMapsState:
+    """Node 5 — extract historical eras and score temporal sentiment."""
+    interpretations = state.get("interpretations", [])
+    location_name   = state.get("location_name", "Unknown Location")
+
+    groq_client = _make_groq_client()
+    if groq_client is None or not interpretations:
+        log.warning("[score_timeline] skipping — no Groq client or no interpretations")
+        return {**state, "timeline": []}
+
+    log.info("[score_timeline] scoring temporal sentiment for %s", location_name)
+    timeline = score_temporal_sentiment(interpretations, location_name, groq_client)
+
+    return {**state, "timeline": timeline}
+
+
 # ── Graph assembly ────────────────────────────────────────────────────────────
 
 def _build_graph() -> Any:
     builder = StateGraph(EchoMapsState)
 
-    builder.add_node("fetch_context",   fetch_context_node)
-    builder.add_node("run_historians",  run_historians_node)
-    builder.add_node("synthesize",      synthesize_node)
+    builder.add_node("fetch_context",    fetch_context_node)
+    builder.add_node("run_historians",   run_historians_node)
+    builder.add_node("synthesize",       synthesize_node)
     builder.add_node("extract_entities", extract_entities_node)
+    builder.add_node("score_timeline",   score_timeline_node)
 
-    builder.add_edge(START,              "fetch_context")
-    builder.add_edge("fetch_context",    "run_historians")
-    builder.add_edge("run_historians",   "synthesize")
-    builder.add_edge("synthesize",       "extract_entities")
-    builder.add_edge("extract_entities", END)
+    builder.add_edge(START,               "fetch_context")
+    builder.add_edge("fetch_context",     "run_historians")
+    builder.add_edge("run_historians",    "synthesize")
+    builder.add_edge("synthesize",        "extract_entities")
+    builder.add_edge("extract_entities",  "score_timeline")
+    builder.add_edge("score_timeline",    END)
 
     return builder.compile()
 
@@ -199,7 +221,7 @@ def run_echomaps_pipeline(
     Returns:
         Final EchoMapsState dict with keys:
           context_chunks, sources, location_id,
-          interpretations, final_narrative, knowledge_graph.
+          interpretations, final_narrative, knowledge_graph, timeline.
     """
     initial: EchoMapsState = {
         "lat":           lat,
